@@ -20,6 +20,8 @@
 namespace Doctrine\ORM\Mapping;
 
 use BadMethodCallException;
+use Doctrine\Common\Persistence\Mapping\ReflectionService;
+use Doctrine\ORM\ORMException;
 use InvalidArgumentException;
 use RuntimeException;
 use Doctrine\DBAL\Types\Type;
@@ -893,21 +895,15 @@ class ClassMetadataInfo implements ClassMetadata
      *
      * @return void
      */
-    public function wakeupReflection($reflService)
+    public function wakeupReflection($reflService, ClassMetadataFactory $classMetadataFactory = null)
     {
         // Restore ReflectionClass and properties
         $this->reflClass = $reflService->getClass($this->name);
 
         foreach ($this->fieldMappings as $field => $mapping) {
             if (isset($mapping['declaredField'])) {
-                $declaringClass = isset($this->embeddedClasses[$mapping['declaredField']]['declared'])
-                                      ? $this->embeddedClasses[$mapping['declaredField']]['declared'] : $this->name;
-
-                $this->reflFields[$field] = new ReflectionEmbeddedProperty(
-                    $reflService->getAccessibleProperty($declaringClass, $mapping['declaredField']),
-                    $reflService->getAccessibleProperty($this->embeddedClasses[$mapping['declaredField']]['class'], $mapping['originalField']),
-                    $this->embeddedClasses[$mapping['declaredField']]['class']
-                );
+                $this->reflFields[$field] =
+                    $this->createReflectionEmbeddedProperty($reflService, $mapping, $classMetadataFactory);
                 continue;
             }
 
@@ -921,6 +917,39 @@ class ClassMetadataInfo implements ClassMetadata
                 ? $reflService->getAccessibleProperty($mapping['declared'], $field)
                 : $reflService->getAccessibleProperty($this->name, $field);
         }
+    }
+
+    /**
+     * Create an instance of ReflectionEmbeddedProperty. Handles nested embeddables by fetching the
+     * ReflectionEmbeddedProperty created on the ClassMetadataInfo instance of the concerning class.
+     *
+     * @param ReflectionService    $reflService
+     * @param array                $mapping
+     * @param ClassMetadataFactory $field
+     */
+    private function createReflectionEmbeddedProperty($reflService, $mapping, $classMetadataFactory = null)
+    {
+        $declaringClass = isset($this->embeddedClasses[$mapping['declaredField']]['declared'])
+            ? $this->embeddedClasses[$mapping['declaredField']]['declared'] : $this->name;
+
+        $parentProperty = $reflService->getAccessibleProperty($declaringClass, $mapping['declaredField']);
+
+        $childClassName = $this->embeddedClasses[$mapping['declaredField']]['class'];
+
+        $fieldParts = explode(".", $mapping['fieldName']);
+
+        if (count($fieldParts) > 2 && null === $classMetadataFactory) {
+            throw new ORMException("Cannot create nested embedded reflection property without class metadata factory.");
+        }
+
+        if (count($fieldParts) > 2) {
+            $childClassMetadata = $classMetadataFactory->getMetadataFor($childClassName);
+            $childProperty = $childClassMetadata->reflFields[implode('.', array_slice($fieldParts, 1))];
+        } else {
+            $childProperty = $reflService->getAccessibleProperty($childClassName, $mapping['originalField']);
+        }
+
+        return new ReflectionEmbeddedProperty($parentProperty, $childProperty, $childClassName);
     }
 
     /**
