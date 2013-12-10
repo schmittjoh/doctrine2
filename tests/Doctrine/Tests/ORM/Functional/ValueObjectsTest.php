@@ -1,6 +1,7 @@
 <?php
 
 namespace Doctrine\Tests\ORM\Functional;
+use Doctrine\ORM\Query;
 
 /**
  * @group DDC-93
@@ -158,6 +159,35 @@ class ValueObjectsTest extends \Doctrine\Tests\OrmFunctionalTestCase
         $reloadedCar = $this->_em->find(__NAMESPACE__.'\\DDC93Car', $car->id);
         $this->assertEquals($car, $reloadedCar);
     }
+
+    public function testNestedEmbeddable()
+    {
+        $this->_schemaTool->createSchema(array(
+            $this->_em->getClassMetadata(__NAMESPACE__ . '\DDC93Customer'),
+            $this->_em->getClassMetadata(__NAMESPACE__ . '\DDC93ContactInfo'),
+            $this->_em->getClassMetadata(__NAMESPACE__ . '\DDC93PhoneNumber'),
+            $this->_em->getClassMetadata(__NAMESPACE__ . '\DDC93RegionCode'),
+        ));
+
+        $customer = new DDC93Customer(new DDC93ContactInfo(new DDC93PhoneNumber(new DDC93RegionCode('+31', '30'), '1234567', true)));
+        $this->_em->persist($customer);
+        $this->_em->flush($customer);
+
+        $this->_em->clear();
+
+        $customers = $this->_em->getRepository(__NAMESPACE__ . '\DDC93Customer')->findAll();
+        $customer = $customers[0];
+
+        $this->assertEquals('+31', $customer->getContactInfo()->getPhoneNumber()->getRegionCode()->getCountryCode());
+        $this->assertEquals('30', $customer->getContactInfo()->getPhoneNumber()->getRegionCode()->getAreaCode());
+        $this->assertEquals('1234567', $customer->getContactInfo()->getPhoneNumber()->getAccountNumber());
+        $this->assertTrue($customer->getContactInfo()->getPhoneNumber()->isMobile());
+
+        $dql = "SELECT c.contactInfo.phoneNumber.regionCode.countryCode countryCode FROM " . __NAMESPACE__ . "\\DDC93Customer c";
+        $countryCodeValues = $this->_em->createQuery($dql)->execute(null, Query::HYDRATE_SCALAR);
+
+        $this->assertEquals(array(array('countryCode' => '+31')), $countryCodeValues);
+    }
 }
 
 /**
@@ -259,3 +289,73 @@ class DDC93Address
     }
 }
 
+/** @Entity */
+class DDC93Customer
+{
+    /** @Id @GeneratedValue @Column(type="integer") */
+    private $id;
+
+    /** @Embedded(class = "DDC93ContactInfo", columnPrefix = "contact_info_") */
+    private $contactInfo;
+    public function getContactInfo() { return $this->contactInfo; }
+
+    public function __construct(DDC93ContactInfo $contactInfo)
+    {
+        $this->contactInfo = $contactInfo;
+    }
+}
+
+/** @Embeddable */
+class DDC93ContactInfo
+{
+    /** @Embedded(class = "DDC93PhoneNumber", columnPrefix = "phone_number_") */
+    private $phoneNumber;
+    public function getPhoneNumber() { return $this->phoneNumber; }
+
+    public function __construct(DDC93PhoneNumber $phoneNumber)
+    {
+        $this->phoneNumber = $phoneNumber;
+    }
+}
+
+
+/** @Embeddable */
+class DDC93PhoneNumber
+{
+    /** @Embedded(class = "DDC93RegionCode", columnPrefix = "region_code_") */
+    private $regionCode;
+    public function getRegionCode() { return $this->regionCode; }
+
+    /** @Column(name="account_number") */
+    private $accountNumber;
+    public function getAccountNumber() { return $this->accountNumber; }
+
+    /** @Column(type="boolean") */
+    private $mobile;
+    public function isMobile() { return $this->mobile; }
+
+    public function __construct(DDC93RegionCode $regionCode, $accountNumber, $mobile)
+    {
+        $this->regionCode = $regionCode;
+        $this->accountNumber = $accountNumber;
+        $this->mobile = $mobile;
+    }
+}
+
+/** @Embeddable */
+class DDC93RegionCode
+{
+    /** @Column(name="country_code") */
+    private $countryCode;
+    public function getCountryCode() { return $this->countryCode; }
+
+    /** @Column(name="area_code") */
+    private $areaCode;
+    public function getAreaCode() { return $this->areaCode; }
+
+    public function __construct($countryCode, $areaCode)
+    {
+        $this->countryCode = $countryCode;
+        $this->areaCode = $areaCode;
+    }
+}
