@@ -6,8 +6,6 @@ use Doctrine\Tests\Models\CMS\CmsUser;
 use Doctrine\Tests\Models\CMS\CmsArticle;
 use Doctrine\Common\Cache\ArrayCache;
 
-require_once __DIR__ . '/../../TestInit.php';
-
 /**
  * ResultCacheTest
  *
@@ -143,7 +141,7 @@ class ResultCacheTest extends \Doctrine\Tests\OrmFunctionalTestCase
 
         $this->assertEquals(0, $this->getCacheSize($cache));
         $query->getResult();
-        $this->assertEquals(2, $this->getCacheSize($cache));
+        $this->assertEquals(1, $this->getCacheSize($cache));
 
         return $query;
     }

@@ -8,10 +8,10 @@ use Doctrine\ORM\Proxy\ProxyFactory;
 use Doctrine\ORM\Mapping\AssociationMapping;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query;
+use Doctrine\Tests\Models\Hydration\EntityWithArrayDefaultArrayValueM2M;
+use Doctrine\Tests\Models\Hydration\SimpleEntity;
 
 use Doctrine\Tests\Models\CMS\CmsUser;
-
-require_once __DIR__ . '/../../TestInit.php';
 
 class ObjectHydratorTest extends HydrationTestCase
 {
@@ -1927,5 +1927,60 @@ class ObjectHydratorTest extends HydrationTestCase
         $stmt     = new HydratorMockStatement($resultSet);
         $hydrator = new \Doctrine\ORM\Internal\Hydration\ObjectHydrator($this->_em);
         $hydrator->hydrateAll($stmt, $rsm);
+    }
+
+    /**
+     * @group DDC-3076
+     *
+     * @expectedException \Doctrine\ORM\Internal\Hydration\HydrationException
+     * @expectedExceptionMessage The discriminator value "subworker" is invalid. It must be one of "person", "manager", "employee".
+     */
+    public function testInvalidDiscriminatorValueException()
+    {
+        $rsm = new ResultSetMapping;
+
+        $rsm->addEntityResult('Doctrine\Tests\Models\Company\CompanyPerson', 'p');
+
+        $rsm->addFieldResult('p', 'p__id', 'id');
+        $rsm->addFieldResult('p', 'p__name', 'name');
+        $rsm->addMetaResult('p', 'discr', 'discr');
+        $rsm->setDiscriminatorColumn('p', 'discr');
+
+        $resultSet = array(
+              array(
+                  'p__id'   => '1',
+                  'p__name' => 'Fabio B. Silva',
+                  'discr'   => 'subworker'
+              ),
+         );
+
+        $stmt       = new HydratorMockStatement($resultSet);
+        $hydrator   = new \Doctrine\ORM\Internal\Hydration\ObjectHydrator($this->_em);
+        $hydrator->hydrateAll($stmt, $rsm);
+    }
+
+    public function testFetchJoinCollectionValuedAssociationWithDefaultArrayValue()
+    {
+        $rsm = new ResultSetMapping;
+
+        $rsm->addEntityResult(EntityWithArrayDefaultArrayValueM2M::CLASSNAME, 'e1', null);
+        $rsm->addJoinedEntityResult(SimpleEntity::CLASSNAME, 'e2', 'e1', 'collection');
+        $rsm->addFieldResult('e1', 'a1__id', 'id');
+        $rsm->addFieldResult('e2', 'e2__id', 'id');
+
+        $result = (new \Doctrine\ORM\Internal\Hydration\ObjectHydrator($this->_em))
+            ->hydrateAll(
+                new HydratorMockStatement([[
+                    'a1__id' => '1',
+                    'e2__id' => '1',
+                ]]),
+                $rsm
+            );
+
+        $this->assertCount(1, $result);
+        $this->assertInstanceOf(EntityWithArrayDefaultArrayValueM2M::CLASSNAME, $result[0]);
+        $this->assertInstanceOf('Doctrine\ORM\PersistentCollection', $result[0]->collection);
+        $this->assertCount(1, $result[0]->collection);
+        $this->assertInstanceOf(SimpleEntity::CLASSNAME, $result[0]->collection[0]);
     }
 }

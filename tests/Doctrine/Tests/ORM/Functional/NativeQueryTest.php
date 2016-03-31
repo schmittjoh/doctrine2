@@ -17,8 +17,6 @@ use Doctrine\Tests\Models\Company\CompanyFixContract;
 use Doctrine\Tests\Models\Company\CompanyEmployee;
 use Doctrine\Tests\Models\Company\CompanyPerson;
 
-require_once __DIR__ . '/../../TestInit.php';
-
 /**
  * NativeQueryTest
  *
@@ -311,6 +309,25 @@ class NativeQueryTest extends \Doctrine\Tests\OrmFunctionalTestCase
 
         $this->assertNotNull($address->getUser());
         $this->assertEquals($user->name, $address->getUser()->getName());
+    }
+
+    /**
+     * @group rsm-sti
+     */
+    public function testConcreteClassInSingleTableInheritanceSchemaWithRSMBuilderIsFine()
+    {
+        $rsm = new ResultSetMappingBuilder($this->_em);
+        $rsm->addRootEntityFromClassMetadata('Doctrine\Tests\Models\Company\CompanyFixContract', 'c');
+    }
+
+    /**
+     * @group rsm-sti
+     */
+    public function testAbstractClassInSingleTableInheritanceSchemaWithRSMBuilderThrowsException()
+    {
+        $this->setExpectedException('\InvalidArgumentException', 'ResultSetMapping builder does not currently support your inheritance scheme.');
+        $rsm = new ResultSetMappingBuilder($this->_em);
+        $rsm->addRootEntityFromClassMetadata('Doctrine\Tests\Models\Company\CompanyContract', 'c');
     }
 
     /**
@@ -773,5 +790,21 @@ class NativeQueryTest extends \Doctrine\Tests\OrmFunctionalTestCase
         $rsm->addRootEntityFromClassMetadata('Doctrine\Tests\Models\CMS\CmsUser', 'u');
 
         $this->assertSQLEquals('u.id AS id0, u.status AS status1, u.username AS username2, u.name AS name3, u.email_id AS email_id4', (string)$rsm);
+    }
+
+    /**
+     * @group DDC-3899
+     */
+    public function testGenerateSelectClauseWithDiscriminatorColumn()
+    {
+        $rsm = new ResultSetMappingBuilder($this->_em, ResultSetMappingBuilder::COLUMN_RENAMING_INCREMENT);
+        $rsm->addEntityResult('Doctrine\Tests\Models\DDC3899\DDC3899User', 'u');
+        $rsm->addJoinedEntityResult('Doctrine\Tests\Models\DDC3899\DDC3899FixContract', 'c', 'u', 'contracts');
+        $rsm->addFieldResult('u', $this->platform->getSQLResultCasing('id'), 'id');
+        $rsm->setDiscriminatorColumn('c', $this->platform->getSQLResultCasing('discr'));
+
+        $selectClause = $rsm->generateSelectClause(array('u' => 'u1', 'c' => 'c1'));
+
+        $this->assertSQLEquals('u1.id as id, c1.discr as discr', $selectClause);
     }
 }

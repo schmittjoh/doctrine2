@@ -132,6 +132,11 @@ use Doctrine\Common\Util\ClassUtils;
     private $filterCollection;
 
     /**
+     * @var \Doctrine\ORM\Cache The second level cache regions API.
+     */
+    private $cache;
+
+    /**
      * Creates a new EntityManager that operates on the given database connection
      * and uses the given Configuration and EventManager implementations.
      *
@@ -159,12 +164,16 @@ use Doctrine\Common\Util\ClassUtils;
             $config->getProxyNamespace(),
             $config->getAutoGenerateProxyClasses()
         );
+
+        if ($config->isSecondLevelCacheEnabled()) {
+            $cacheConfig    = $config->getSecondLevelCacheConfiguration();
+            $cacheFactory   = $cacheConfig->getCacheFactory();
+            $this->cache    = $cacheFactory->createCache($this);
+        }
     }
 
     /**
-     * Gets the database connection object used by the EntityManager.
-     *
-     * @return \Doctrine\DBAL\Connection
+     * {@inheritDoc}
      */
     public function getConnection()
     {
@@ -182,18 +191,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets an ExpressionBuilder used for object-oriented construction of query expressions.
-     *
-     * Example:
-     *
-     * <code>
-     *     $qb = $em->createQueryBuilder();
-     *     $expr = $em->getExpressionBuilder();
-     *     $qb->select('u')->from('User', 'u')
-     *         ->where($expr->orX($expr->eq('u.id', 1), $expr->eq('u.id', 2)));
-     * </code>
-     *
-     * @return \Doctrine\ORM\Query\Expr
+     * {@inheritDoc}
      */
     public function getExpressionBuilder()
     {
@@ -205,9 +203,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Starts a transaction on the underlying database connection.
-     *
-     * @return void
+     * {@inheritDoc}
      */
     public function beginTransaction()
     {
@@ -215,18 +211,15 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Executes a function in a transaction.
-     *
-     * The function gets passed this EntityManager instance as an (optional) parameter.
-     *
-     * {@link flush} is invoked prior to transaction commit.
-     *
-     * If an exception occurs during execution of the function or flushing or transaction commit,
-     * the transaction is rolled back, the EntityManager closed and the exception re-thrown.
-     *
-     * @param callable $func The function to execute transactionally.
-     *
-     * @return mixed The non-empty value returned from the closure or true instead.
+     * {@inheritDoc}
+     */
+    public function getCache()
+    {
+        return $this->cache;
+    }
+
+    /**
+     * {@inheritDoc}
      */
     public function transactional($func)
     {
@@ -252,9 +245,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Commits a transaction on the underlying database connection.
-     *
-     * @return void
+     * {@inheritDoc}
      */
     public function commit()
     {
@@ -262,9 +253,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Performs a rollback on the underlying database connection.
-     *
-     * @return void
+     * {@inheritDoc}
      */
     public function rollback()
     {
@@ -281,11 +270,11 @@ use Doctrine\Common\Util\ClassUtils;
      * MyProject\Domain\User
      * sales:PriceRequest
      *
+     * Internal note: Performance-sensitive method.
+     *
      * @param string $className
      *
      * @return \Doctrine\ORM\Mapping\ClassMetadata
-     *
-     * @internal Performance-sensitive method.
      */
     public function getClassMetadata($className)
     {
@@ -293,11 +282,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Creates a new Query object.
-     *
-     * @param string $dql The DQL string.
-     *
-     * @return \Doctrine\ORM\Query
+     * {@inheritDoc}
      */
     public function createQuery($dql = '')
     {
@@ -311,11 +296,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Creates a Query from a named query.
-     *
-     * @param string $name
-     *
-     * @return \Doctrine\ORM\Query
+     * {@inheritDoc}
      */
     public function createNamedQuery($name)
     {
@@ -323,12 +304,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Creates a native SQL query.
-     *
-     * @param string           $sql
-     * @param ResultSetMapping $rsm The ResultSetMapping to use.
-     *
-     * @return NativeQuery
+     * {@inheritDoc}
      */
     public function createNativeQuery($sql, ResultSetMapping $rsm)
     {
@@ -341,11 +317,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Creates a NativeQuery from a named native query.
-     *
-     * @param string $name
-     *
-     * @return \Doctrine\ORM\NativeQuery
+     * {@inheritDoc}
      */
     public function createNamedNativeQuery($name)
     {
@@ -355,9 +327,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Create a QueryBuilder instance
-     *
-     * @return QueryBuilder
+     * {@inheritDoc}
      */
     public function createQueryBuilder()
     {
@@ -389,10 +359,13 @@ use Doctrine\Common\Util\ClassUtils;
     /**
      * Finds an Entity by its identifier.
      *
-     * @param string       $entityName
-     * @param mixed        $id
-     * @param integer      $lockMode
-     * @param integer|null $lockVersion
+     * @param string       $entityName  The class name of the entity to find.
+     * @param mixed        $id          The identity of the entity to find.
+     * @param integer|null $lockMode    One of the \Doctrine\DBAL\LockMode::* constants
+     *                                  or NULL if no specific lock mode should be used
+     *                                  during the search.
+     * @param integer|null $lockVersion The version of the entity to find when using
+     *                                  optimistic locking.
      *
      * @return object|null The entity instance or NULL if the entity can not be found.
      *
@@ -401,20 +374,26 @@ use Doctrine\Common\Util\ClassUtils;
      * @throws TransactionRequiredException
      * @throws ORMException
      */
-    public function find($entityName, $id, $lockMode = LockMode::NONE, $lockVersion = null)
+    public function find($entityName, $id, $lockMode = null, $lockVersion = null)
     {
         $class = $this->metadataFactory->getMetadataFor(ltrim($entityName, '\\'));
 
-        if (is_object($id) && $this->metadataFactory->hasMetadataFor(ClassUtils::getClass($id))) {
-            $id = $this->unitOfWork->getSingleIdentifierValue($id);
-
-            if ($id === null) {
-                throw ORMInvalidArgumentException::invalidIdentifierBindingEntity();
+        if ( ! is_array($id)) {
+            if ($class->isIdentifierComposite) {
+                throw ORMInvalidArgumentException::invalidCompositeIdentifier();
             }
+
+            $id = array($class->identifier[0] => $id);
         }
 
-        if ( ! is_array($id)) {
-            $id = array($class->identifier[0] => $id);
+        foreach ($id as $i => $value) {
+            if (is_object($value) && $this->metadataFactory->hasMetadataFor(ClassUtils::getClass($value))) {
+                $id[$i] = $this->unitOfWork->getSingleIdentifierValue($value);
+
+                if ($id[$i] === null) {
+                    throw ORMInvalidArgumentException::invalidIdentifierBindingEntity();
+                }
+            }
         }
 
         $sortedId = array();
@@ -425,6 +404,11 @@ use Doctrine\Common\Util\ClassUtils;
             }
 
             $sortedId[$identifier] = $id[$identifier];
+            unset($id[$identifier]);
+        }
+
+        if ($id) {
+            throw ORMException::unrecognizedIdentifierFields($class->name, array_keys($id));
         }
 
         $unitOfWork = $this->getUnitOfWork();
@@ -435,13 +419,14 @@ use Doctrine\Common\Util\ClassUtils;
                 return null;
             }
 
-            switch ($lockMode) {
-                case LockMode::OPTIMISTIC:
+            switch (true) {
+                case LockMode::OPTIMISTIC === $lockMode:
                     $this->lock($entity, $lockMode, $lockVersion);
                     break;
 
-                case LockMode::PESSIMISTIC_READ:
-                case LockMode::PESSIMISTIC_WRITE:
+                case LockMode::NONE === $lockMode:
+                case LockMode::PESSIMISTIC_READ === $lockMode:
+                case LockMode::PESSIMISTIC_WRITE === $lockMode:
                     $persister = $unitOfWork->getEntityPersister($class->name);
                     $persister->refresh($sortedId, $entity, $lockMode);
                     break;
@@ -452,11 +437,8 @@ use Doctrine\Common\Util\ClassUtils;
 
         $persister = $unitOfWork->getEntityPersister($class->name);
 
-        switch ($lockMode) {
-            case LockMode::NONE:
-                return $persister->load($sortedId);
-
-            case LockMode::OPTIMISTIC:
+        switch (true) {
+            case LockMode::OPTIMISTIC === $lockMode:
                 if ( ! $class->isVersioned) {
                     throw OptimisticLockException::notVersioned($class->name);
                 }
@@ -467,25 +449,22 @@ use Doctrine\Common\Util\ClassUtils;
 
                 return $entity;
 
-            default:
+            case LockMode::NONE === $lockMode:
+            case LockMode::PESSIMISTIC_READ === $lockMode:
+            case LockMode::PESSIMISTIC_WRITE === $lockMode:
                 if ( ! $this->getConnection()->isTransactionActive()) {
                     throw TransactionRequiredException::transactionRequired();
                 }
 
                 return $persister->load($sortedId, null, null, array(), $lockMode);
+
+            default:
+                return $persister->loadById($sortedId);
         }
     }
 
     /**
-     * Gets a reference to the entity identified by the given type and identifier
-     * without actually loading it, if the entity is not yet loaded.
-     *
-     * @param string $entityName The name of the entity type.
-     * @param mixed  $id         The entity identifier.
-     *
-     * @return object The entity reference.
-     *
-     * @throws ORMException
+     * {@inheritDoc}
      */
     public function getReference($entityName, $id)
     {
@@ -526,24 +505,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets a partial reference to the entity identified by the given type and identifier
-     * without actually loading it, if the entity is not yet loaded.
-     *
-     * The returned reference may be a partial object if the entity is not yet loaded/managed.
-     * If it is a partial object it will not initialize the rest of the entity state on access.
-     * Thus you can only ever safely access the identifier of an entity obtained through
-     * this method.
-     *
-     * The use-cases for partial references involve maintaining bidirectional associations
-     * without loading one side of the association or to update an entity without loading it.
-     * Note, however, that in the latter case the original (persistent) entity data will
-     * never be visible to the application (especially not event listeners) as it will
-     * never be loaded in the first place.
-     *
-     * @param string $entityName The name of the entity type.
-     * @param mixed  $identifier The entity identifier.
-     *
-     * @return object The (partial) entity reference.
+     * {@inheritDoc}
      */
     public function getPartialReference($entityName, $identifier)
     {
@@ -582,11 +544,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Closes the EntityManager. All entities that are currently managed
-     * by this EntityManager become detached. The EntityManager may no longer
-     * be used after it is closed.
-     *
-     * @return void
+     * {@inheritDoc}
      */
     public function close()
     {
@@ -710,14 +668,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Creates a copy of the given entity. Can create a shallow or a deep copy.
-     *
-     * @param object  $entity The entity to copy.
-     * @param boolean $deep   FALSE for a shallow copy, TRUE for a deep copy.
-     *
-     * @return object The new entity.
-     *
-     * @throws \BadMethodCallException
+     * {@inheritDoc}
      *
      * @todo Implementation need. This is necessary since $e2 = clone $e1; throws an E_FATAL when access anything on $e:
      * Fatal error: Maximum function nesting level of '100' reached, aborting!
@@ -728,16 +679,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Acquire a lock on the given entity.
-     *
-     * @param object   $entity
-     * @param int      $lockMode
-     * @param int|null $lockVersion
-     *
-     * @return void
-     *
-     * @throws OptimisticLockException
-     * @throws PessimisticLockException
+     * {@inheritDoc}
      */
     public function lock($entity, $lockMode, $lockVersion = null)
     {
@@ -771,9 +713,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets the EventManager used by the EntityManager.
-     *
-     * @return \Doctrine\Common\EventManager
+     * {@inheritDoc}
      */
     public function getEventManager()
     {
@@ -781,9 +721,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets the Configuration used by the EntityManager.
-     *
-     * @return \Doctrine\ORM\Configuration
+     * {@inheritDoc}
      */
     public function getConfiguration()
     {
@@ -805,9 +743,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Check if the Entity manager is open or closed.
-     *
-     * @return bool
+     * {@inheritDoc}
      */
     public function isOpen()
     {
@@ -815,9 +751,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets the UnitOfWork used by the EntityManager to coordinate operations.
-     *
-     * @return \Doctrine\ORM\UnitOfWork
+     * {@inheritDoc}
      */
     public function getUnitOfWork()
     {
@@ -825,16 +759,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets a hydrator for the given hydration mode.
-     *
-     * This method caches the hydrator instances which is used for all queries that don't
-     * selectively iterate over the result.
-     *
-     * @deprecated
-     *
-     * @param int $hydrationMode
-     *
-     * @return \Doctrine\ORM\Internal\Hydration\AbstractHydrator
+     * {@inheritDoc}
      */
     public function getHydrator($hydrationMode)
     {
@@ -842,13 +767,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Create a new instance for the given hydration mode.
-     *
-     * @param int $hydrationMode
-     *
-     * @return \Doctrine\ORM\Internal\Hydration\AbstractHydrator
-     *
-     * @throws ORMException
+     * {@inheritDoc}
      */
     public function newHydrator($hydrationMode)
     {
@@ -878,9 +797,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets the proxy factory used by the EntityManager to create entity proxies.
-     *
-     * @return ProxyFactory
+     * {@inheritDoc}
      */
     public function getProxyFactory()
     {
@@ -888,13 +805,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Helper method to initialize a lazy loading proxy or persistent collection.
-     *
-     * This method is a no-op for other objects
-     *
-     * @param object $obj
-     *
-     * @return void
+     * {@inheritDoc}
      */
     public function initializeObject($obj)
     {
@@ -940,9 +851,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Gets the enabled filters.
-     *
-     * @return FilterCollection The active filter collection.
+     * {@inheritDoc}
      */
     public function getFilters()
     {
@@ -954,9 +863,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Checks whether the state of the filter collection is clean.
-     *
-     * @return boolean True, if the filter collection is clean.
+     * {@inheritDoc}
      */
     public function isFiltersStateClean()
     {
@@ -964,9 +871,7 @@ use Doctrine\Common\Util\ClassUtils;
     }
 
     /**
-     * Checks whether the Entity Manager has filters.
-     *
-     * @return boolean True, if the EM has a filter collection.
+     * {@inheritDoc}
      */
     public function hasFilters()
     {

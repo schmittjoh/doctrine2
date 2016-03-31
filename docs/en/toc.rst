@@ -26,7 +26,6 @@ Reference Guide
    :numbered:
 
    reference/architecture
-   reference/installation
    reference/configuration.rst
    reference/faq
    reference/basic-mapping
@@ -54,10 +53,13 @@ Reference Guide
    reference/metadata-drivers
    reference/best-practices
    reference/limitations-and-known-issues
-   reference/filters.rst
-   reference/namingstrategy.rst
-   reference/advanced-configuration.rst
-
+   tutorials/pagination
+   reference/filters
+   reference/namingstrategy
+   reference/advanced-configuration
+   reference/second-level-cache
+   reference/security
+   
 
 Cookbook
 --------

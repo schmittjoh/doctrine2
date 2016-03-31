@@ -130,7 +130,7 @@ abstract class AbstractExporter
     public function export()
     {
         if ( ! is_dir($this->_outputDir)) {
-            mkdir($this->_outputDir, 0777, true);
+            mkdir($this->_outputDir, 0775, true);
         }
 
         foreach ($this->_metadata as $metadata) {
@@ -139,12 +139,13 @@ abstract class AbstractExporter
                 $path = $this->_generateOutputPath($metadata);
                 $dir = dirname($path);
                 if ( ! is_dir($dir)) {
-                    mkdir($dir, 0777, true);
+                    mkdir($dir, 0775, true);
                 }
                 if (file_exists($path) && !$this->_overwriteExistingFiles) {
                     throw ExportException::attemptOverwriteExistingFile($path);
                 }
                 file_put_contents($path, $output);
+                chmod($path, 0664);
             }
         }
     }
@@ -197,6 +198,25 @@ abstract class AbstractExporter
 
             case ClassMetadataInfo::INHERITANCE_TYPE_TABLE_PER_CLASS:
                 return 'PER_CLASS';
+        }
+    }
+
+    /**
+     * @param int $mode
+     *
+     * @return string
+     */
+    protected function _getFetchModeString($mode)
+    {
+        switch ($mode) {
+            case ClassMetadataInfo::FETCH_EAGER:
+                return 'EAGER';
+
+            case ClassMetadataInfo::FETCH_EXTRA_LAZY:
+                return 'EXTRA_LAZY';
+
+            case ClassMetadataInfo::FETCH_LAZY:
+                return 'LAZY';
         }
     }
 

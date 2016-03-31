@@ -7,8 +7,6 @@ use Doctrine\ORM\Tools\ToolEvents;
 use Doctrine\ORM\Tools\Event\GenerateSchemaTableEventArgs;
 use Doctrine\ORM\Tools\Event\GenerateSchemaEventArgs;
 
-require_once __DIR__ . '/../../TestInit.php';
-
 class SchemaToolTest extends \Doctrine\Tests\OrmTestCase
 {
     public function testAddUniqueIndexForUniqueFieldAnnotation()
@@ -101,6 +99,45 @@ class SchemaToolTest extends \Doctrine\Tests\OrmTestCase
         $this->assertEquals(count($classes), $listener->tableCalls);
         $this->assertTrue($listener->schemaCalled);
     }
+
+    public function testNullDefaultNotAddedToCustomSchemaOptions()
+    {
+        $em = $this->_getTestEntityManager();
+        $schemaTool = new SchemaTool($em);
+
+        $classes = array(
+            $em->getClassMetadata('Doctrine\Tests\Models\NullDefault\NullDefaultColumn'),
+        );
+
+        $customSchemaOptions = $schemaTool->getSchemaFromMetadata($classes)
+            ->getTable('NullDefaultColumn')
+            ->getColumn('nullDefault')
+            ->getCustomSchemaOptions();
+
+        $this->assertSame(array(), $customSchemaOptions);
+    }
+
+    /**
+     * @group DDC-3671
+     */
+    public function testSchemaHasProperIndexesFromUniqueConstraintAnnotation()
+    {
+        $em = $this->_getTestEntityManager();
+        $schemaTool = new SchemaTool($em);
+
+        $classes = [
+            $em->getClassMetadata(__NAMESPACE__ . '\\UniqueConstraintAnnotationModel'),
+        ];
+
+        $schema = $schemaTool->getSchemaFromMetadata($classes);
+
+        $this->assertTrue($schema->hasTable('unique_constraint_annotation_table'));
+        $table = $schema->getTable('unique_constraint_annotation_table');
+
+        $this->assertEquals(2, count($table->getIndexes()));
+        $this->assertTrue($table->hasIndex('primary'));
+        $this->assertTrue($table->hasIndex('uniq_hash'));
+    }
 }
 
 /**
@@ -132,4 +169,21 @@ class GenerateSchemaEventListener
     {
         $this->schemaCalled = true;
     }
+}
+
+/**
+ * @Entity
+ * @Table(name="unique_constraint_annotation_table", uniqueConstraints={
+ *   @UniqueConstraint(name="uniq_hash", columns={"hash"})
+ * })
+ */
+class UniqueConstraintAnnotationModel
+{
+    /** @Id @Column */
+    private $id;
+
+    /**
+     * @Column(name="hash", type="string", length=8, nullable=false, unique=true)
+     */
+    private $hash;
 }

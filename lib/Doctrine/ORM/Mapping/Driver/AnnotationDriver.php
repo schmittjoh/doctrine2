@@ -93,15 +93,23 @@ class AnnotationDriver extends AbstractAnnotationDriver
 
         // Evaluate Table annotation
         if (isset($classAnnotations['Doctrine\ORM\Mapping\Table'])) {
-            $tableAnnot = $classAnnotations['Doctrine\ORM\Mapping\Table'];
+            $tableAnnot   = $classAnnotations['Doctrine\ORM\Mapping\Table'];
             $primaryTable = array(
-                'name' => $tableAnnot->name,
+                'name'   => $tableAnnot->name,
                 'schema' => $tableAnnot->schema
             );
 
             if ($tableAnnot->indexes !== null) {
                 foreach ($tableAnnot->indexes as $indexAnnot) {
                     $index = array('columns' => $indexAnnot->columns);
+
+                    if ( ! empty($indexAnnot->flags)) {
+                        $index['flags'] = $indexAnnot->flags;
+                    }
+
+                    if ( ! empty($indexAnnot->options)) {
+                        $index['options'] = $indexAnnot->options;
+                    }
 
                     if ( ! empty($indexAnnot->name)) {
                         $primaryTable['indexes'][$indexAnnot->name] = $index;
@@ -115,6 +123,10 @@ class AnnotationDriver extends AbstractAnnotationDriver
                 foreach ($tableAnnot->uniqueConstraints as $uniqueConstraintAnnot) {
                     $uniqueConstraint = array('columns' => $uniqueConstraintAnnot->columns);
 
+                    if ( ! empty($uniqueConstraintAnnot->options)) {
+                        $uniqueConstraint['options'] = $uniqueConstraintAnnot->options;
+                    }
+
                     if ( ! empty($uniqueConstraintAnnot->name)) {
                         $primaryTable['uniqueConstraints'][$uniqueConstraintAnnot->name] = $uniqueConstraint;
                     } else {
@@ -123,11 +135,22 @@ class AnnotationDriver extends AbstractAnnotationDriver
                 }
             }
 
-            if ($tableAnnot->options !== null) {
+            if ($tableAnnot->options) {
                 $primaryTable['options'] = $tableAnnot->options;
             }
 
             $metadata->setPrimaryTable($primaryTable);
+        }
+
+        // Evaluate @Cache annotation
+        if (isset($classAnnotations['Doctrine\ORM\Mapping\Cache'])) {
+            $cacheAnnot = $classAnnotations['Doctrine\ORM\Mapping\Cache'];
+            $cacheMap   = array(
+                'region' => $cacheAnnot->region,
+                'usage'  => constant('Doctrine\ORM\Mapping\ClassMetadata::CACHE_USAGE_' . $cacheAnnot->usage),
+            );
+
+            $metadata->enableCache($cacheMap);
         }
 
         // Evaluate NamedNativeQueries annotation
@@ -373,6 +396,14 @@ class AnnotationDriver extends AbstractAnnotationDriver
                 $mapping['columnPrefix'] = $embeddedAnnot->columnPrefix;
                 $metadata->mapEmbedded($mapping);
             }
+
+            // Evaluate @Cache annotation
+            if (($cacheAnnot = $this->reader->getPropertyAnnotation($property, 'Doctrine\ORM\Mapping\Cache')) !== null) {
+                $metadata->enableAssociationCache($mapping['fieldName'], array(
+                    'usage'         => constant('Doctrine\ORM\Mapping\ClassMetadata::CACHE_USAGE_' . $cacheAnnot->usage),
+                    'region'        => $cacheAnnot->region,
+                ));
+            }
         }
 
         // Evaluate AssociationOverrides annotation
@@ -458,12 +489,9 @@ class AnnotationDriver extends AbstractAnnotationDriver
         if (isset($classAnnotations['Doctrine\ORM\Mapping\HasLifecycleCallbacks'])) {
             /* @var $method \ReflectionMethod */
             foreach ($class->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                // filter for the declaring class only, callbacks from parents will already be registered.
-                if ($method->getDeclaringClass()->name !== $class->name) {
-                    continue;
-                }
 
                 foreach ($this->getMethodCallbacks($method) as $value) {
+
                     $metadata->addLifecycleCallback($value[0], $value[1]);
                 }
             }
