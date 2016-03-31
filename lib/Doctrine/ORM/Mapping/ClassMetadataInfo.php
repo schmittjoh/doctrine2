@@ -940,8 +940,9 @@ class ClassMetadataInfo implements ClassMetadata
                 continue;
             }
 
-            $parentReflFields[$property] = $reflService->getAccessibleProperty($this->name, $property);
-            $this->reflFields[$property] = $reflService->getAccessibleProperty($this->name, $property);
+            $reflectionProperty = $reflService->getAccessibleProperty($embeddedClass['declaredClass'], $property);
+            $parentReflFields[$property] = $reflectionProperty;
+            $this->reflFields[$property] = $reflectionProperty;
         }
 
         foreach ($this->fieldMappings as $field => $mapping) {
@@ -3216,6 +3217,7 @@ class ClassMetadataInfo implements ClassMetadata
 
         $this->embeddedClasses[$mapping['fieldName']] = array(
             'class' => $this->fullyQualifiedClassName($mapping['class']),
+            'declaredClass' => isset($mapping['declaredClass']) ? $mapping['declaredClass'] : $this->name,
             'columnPrefix' => $mapping['columnPrefix'],
             'declaredField' => isset($mapping['declaredField']) ? $mapping['declaredField'] : null,
             'originalField' => isset($mapping['originalField']) ? $mapping['originalField'] : null,
